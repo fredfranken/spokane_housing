@@ -1,0 +1,75 @@
+library("RMySQL")
+library('foreign')
+library(Hmisc)
+library(psych)
+library(car)
+library("dplyr")
+library(randomForest)
+library(reshape2)
+rm(list=ls())
+
+###Build regression model
+
+t1a <- na.omit(house1)
+t2a <- subset(t1a, assessed_amt>0)
+t2a$offprice <- t2a$price/t2a$assessed_amt
+t2 <- subset(t2a, offprice >0.5 & offprice < 2)
+t2 <- subset(t2, sale_date > "2016-01-01")
+
+house <- select(t2, bed, bath, area, month, quarter, price, nbhd_name, assessed_amt)
+house$month <- as.Date(house$month)
+str(house)
+fit <-  lm(price ~ bed + bath + area + month + quarter + nbhd_name + assessed_amt, data=house)
+summary(fit)
+confint(fit, conf.level=0.95)
+
+##Plot model output
+#house$prediction <- predict(fit, newdata = house)
+#sqrt(mean((house$prediction - house$price)^2))
+#plot(house$price, house$prediction)
+
+
+###Build randomForest model
+
+t1a <- na.omit(house1)
+t1a$sale_date <- as.Date(t1a$sale_date)
+t1a <- subset(t1a, sale_date > "2016-01-01")
+t1a$month <- as.Date(t1a$month)
+t2a <- select(t1a, bed, bath, area, acreage, lon, lat, assessed_amt, month, nbhd_name, quarter, price)
+t2a <- subset(t2a, assessed_amt>0)
+t2a$offprice <- t2a$price/t2a$assessed_amt
+t2 <- subset(t2a, offprice >0.5 & offprice < 2)
+t3 <- select(t2, bed, bath, area, acreage, lon, lat, assessed_amt, month, price)
+str(t3)
+
+set.seed(101)
+train=sample(1:nrow(t3),10000)
+#str(train)
+t3.rf=randomForest(price ~ . , data = t3 , subset = train, importance=TRUE, ntree=200)
+varImpPlot(t3.rf)
+
+t4 <- t3[sample(nrow(t3), 500), ]
+str(t4)
+#plot(t3$month, t3$price)
+#t4$predict <- predict(t3.rf, t4)
+#plot(t4$price, t4$predict)
+#cor(t4$price, t4$predict)
+#sqrt(mean((t4$predict - t4$price)^2))
+
+
+##Get all houses in spokane
+p1 <- properties
+p1$sale_date <- as.Date(Sys.Date())
+p1$month <- as.Date(cut(p1$sale_date, breaks = "month"))
+p1$quarter <- quarters(as.Date.character(p1$sale_date))
+
+##Get predicted value for lm
+p1 <- p1[p1$nbhd_name %in% house$nbhd_name,]
+p1$prediction <- predict(fit, newdata = p1)
+
+
+##Get predicted value for RF
+p1$rf_predict <- predict(t3.rf, newdata = p1)
+plot(p1$prediction, p1$rf_predict)
+
+
